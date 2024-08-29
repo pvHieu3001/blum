@@ -1,0 +1,1 @@
+user=%7B%22id%22%3A1390340538%2C%22first_name%22%3A%22pham%22%2C%22last_name%22%3A%22hieu%22%2C%22username%22%3A%22Saitamagento%22%2C%22language_code%22%3A%22vi%22%2C%22allows_write_to_pm%22%3Atrue%7D&chat_instance=4490759986609076868&chat_type=sender&auth_date=1724944040&hash=4de7ebb0b59147a7063fa8acde92a0c3072c5b74a3a1bd5912890f20ba01df9f
