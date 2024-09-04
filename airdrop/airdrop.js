@@ -118,6 +118,23 @@ class GameBot {
     }
   }
 
+  async buyBoostTurbo() {
+    try {
+      const response = await axios.post(
+        "https://api.rockyrabbit.io/api/v1/boosts",
+        {
+          boostId: "turbo",
+          timezone: "Asia/Saigon"
+        },
+        { headers: await this.headers(this.token) }
+      );
+      return response.data;
+    } catch (error) {
+      this.log(`Không thể get boost: ${error.message}`, "error");
+      return null;
+    }
+  }
+
   async autoSync() {
     try {
       const response = await axios.post(
@@ -373,6 +390,79 @@ class GameBot {
     }
   }
 
+    // MemeFi Coin
+    async headers_mfc(token = null) {
+      const headers = {
+        accept: "application/json, text/plain, */*",
+        "accept-language": "en-US,en;q=0.9",
+        "content-type": "application/json",
+        origin: "https://tg-app.memefi.club",
+        referer: "https://tg-app.memefi.club/",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      return headers;
+    }
+  
+    async getUserInfo_mfc() {
+      try {
+        const response = await axios.post(
+          "https://api-gw-tg.memefi.club/graphql",
+          [
+            {
+              operationName: "QueryTelegramUserMe",
+              query: "query QueryTelegramUserMe {\n  telegramUserMe {\n    firstName\n    lastName\n    telegramId\n    username\n    referralCode\n    isDailyRewardClaimed\n    referral {\n      username\n      lastName\n      firstName\n      bossLevel\n      coinsAmount\n      __typename\n    }\n    isReferralInitialJoinBonusAvailable\n    league\n    leagueIsOverTop10k\n    leaguePosition\n    _id\n    opens {\n      isAvailable\n      openType\n      __typename\n    }\n    features\n    role\n    earlyAdopterBonusAmount\n    earlyAdopterBonusPercentage\n    isFreeDurovDonated\n    __typename\n  }\n}",
+              variables: {}
+            }
+          ],
+          { headers: await this.headers_mfc(this.token) }
+        );
+        
+        if (response.status === 200) {
+          this.userInfo = response.data[0].data.telegramUserMe;
+          return this.userInfo;
+        } else {
+          this.log("Token không hợp lệ", "warning");
+          return null;
+        }
+      } catch (error) {
+        console.log(error);
+        this.log(`Không thể lấy thông tin người dùng: ${error.message}`, "error");
+        return null;
+      }
+    }
+  
+    async autoTap_mfc() {
+      try {
+        const response = await axios.post(
+          "https://api-gw-tg.memefi.club/graphql",
+          [
+            {
+              operationName: "MutationGameProcessTapsBatch",
+              query: "mutation MutationGameProcessTapsBatch($payload: TelegramGameTapsBatchInput!) {\n  telegramGameProcessTapsBatch(payload: $payload) {\n    ...FragmentBossFightConfig\n    __typename\n  }\n}\n\nfragment FragmentBossFightConfig on TelegramGameConfigOutput {\n  _id\n  coinsAmount\n  currentEnergy\n  maxEnergy\n  weaponLevel\n  zonesCount\n  tapsReward\n  energyLimitLevel\n  energyRechargeLevel\n  tapBotLevel\n  currentBoss {\n    _id\n    level\n    currentHealth\n    maxHealth\n    __typename\n  }\n  freeBoosts {\n    _id\n    currentTurboAmount\n    maxTurboAmount\n    turboLastActivatedAt\n    turboAmountLastRechargeDate\n    currentRefillEnergyAmount\n    maxRefillEnergyAmount\n    refillEnergyLastActivatedAt\n    refillEnergyAmountLastRechargeDate\n    __typename\n  }\n  bonusLeaderDamageEndAt\n  bonusLeaderDamageStartAt\n  bonusLeaderDamageMultiplier\n  nonce\n  spinEnergyNextRechargeAt\n  spinEnergyNonRefillable\n  spinEnergyRefillable\n  spinEnergyTotal\n  spinEnergyStaticLimit\n  __typename\n}",
+              variables: {
+                payload:{
+                  nonce: "7b26a7304c36c306b909afd9e46207c49767e60e0cd45ae5d8ff045cd7d503ab",
+                  tapsCount: 500,
+                  vector: "3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3"
+                }
+              }
+            }
+          ]
+          ,
+          { headers: await this.headers_mfc(this.token) }
+        );
+        return response.data;
+      } catch (error) {
+        this.log(`Không thể bắt đầu Sync: ${error.message}`, "error");
+        return null;
+      }
+    }
+  
+
 
   async Countdown(seconds) {
     for (let i = Math.floor(seconds); i >= 0; i--) {
@@ -444,11 +534,74 @@ class GameBot {
             await this.buyBoostFullTap_rb();
             await this.autoTap_rb();
           }
+
+          if(bootFull && bootFull[4].level < 4){
+            await this.buyBoostTurbo();
+            await this.autoTap_rb();
+          }
         }
+
         var currentHour = moment().hour();
         if(currentHour >=13 && currentHour <= 15){
-          await upgradeEvent_rb("lunch_fighter");
+          await this.upgradeEvent_rb("lunch_fighter");
         }
+        if(currentHour >=6 && currentHour <= 7){
+          await this.upgradeEvent_rb("breakfast_fighter");
+        }
+        if(currentHour >=7 && currentHour <= 8){
+          await this.upgradeEvent_rb("morning_fighter");
+        }
+
+        if(currentHour >=21 && currentHour <= 23){
+          await this.upgradeEvent_rb("dinner_fighter");
+        }
+        if(currentHour >=22 && currentHour <= 23){
+          await this.upgradeEvent_rb("beforebed_fighter");
+        }
+        if(currentHour >=17 && currentHour <= 18){
+          await this.upgradeEvent_rb("lunchbreak_fighter");
+          await this.upgradeEvent_rb("afternoon_fighter");
+        }
+        if(currentHour >=10 && currentHour <= 11){
+          await this.upgradeEvent_rb("snackbreak_fighter");
+        }
+        await this.upgradeEvent_rb("beforeworkout_fighter");
+        await this.upgradeEvent_rb("afterworkout_fighter");
+        await this.upgradeEvent_rb("jump_rope_fighter");
+        await this.upgradeEvent_rb("stretching_fighter");
+        await this.upgradeEvent_rb("bag_work_fighter");
+        await this.upgradeEvent_rb("pad_work_fighter");
+        await this.upgradeEvent_rb("shadowboxing_fighter");
+        await this.upgradeEvent_rb("bodyweight_fighter");
+        await this.upgradeEvent_rb("weightlifting_fighter");
+        await this.upgradeEvent_rb("running_fighter");
+        await this.upgradeEvent_rb("hiit_fighter");
+        await this.upgradeEvent_rb("yoga_pilates_fighter");
+        await this.upgradeEvent_rb("advanced_stretching_fighter");
+        await this.upgradeEvent_rb("meditation_fighter");
+        await this.upgradeEvent_rb("visualization_fighter");
+        await this.upgradeEvent_rb("punches_coach");
+        await this.upgradeEvent_rb("kicks_coach");
+        await this.upgradeEvent_rb("warm_up_coach");
+        await this.upgradeEvent_rb("endurance_coach");
+        await this.upgradeEvent_rb("strength_training_coach");
+        await this.upgradeEvent_rb("bag_work_coach");
+        await this.upgradeEvent_rb("pad_work_coach");
+        await this.upgradeEvent_rb("shadowboxing_coach");
+        await this.upgradeEvent_rb("combos_coach");
+        await this.upgradeEvent_rb("blocking_coach");
+        await this.upgradeEvent_rb("dodging_coach");
+        await this.upgradeEvent_rb("prevention_counterattacks_coach");
+        await this.upgradeEvent_rb("sparring_coach_daily");
+        await this.upgradeEvent_rb("tactical_training_coach");
+        await this.upgradeEvent_rb("evaluating_progress_coach");
+        await this.upgradeEvent_rb("training_plans_coach");
+        await this.upgradeEvent_rb("motivating_coach");
+        await this.upgradeEvent_rb("psychological_support_coach");
+        await this.upgradeEvent_rb("specific_training_coach");
+        await this.upgradeEvent_rb("competition_strategies_coach");
+        await this.upgradeEvent_rb("yoga_pilates_coach");
+        await this.upgradeEvent_rb("stretching_exercises_coach");
 
         this.log(`Hoàn thành xử lý tài khoản ${userInfo.uid}`, "success");
         console.log("");
