@@ -1,0 +1,1 @@
+query_id=AAG66d5SAAAAALrp3lJqQYjH&user=%7B%22id%22%3A1390340538%2C%22first_name%22%3A%22pham%F0%9F%8D%85%F0%9F%90%B5%F0%9F%A6%89%22%2C%22last_name%22%3A%22hieu%22%2C%22username%22%3A%22Saitamagento%22%2C%22language_code%22%3A%22vi%22%2C%22allows_write_to_pm%22%3Atrue%7D&auth_date=1725900592&hash=ff63a1f9c259fc01346f1ff316513d459b570e8dd8eb700bc5778ab6ee08b920
