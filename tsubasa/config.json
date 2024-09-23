@@ -1,0 +1,5 @@
+{
+    "enableCardUpgrades": true,
+    "maxUpgradeCost": 1000,
+    "upgradeIntervalMinutes": 60
+  }

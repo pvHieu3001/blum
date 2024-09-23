@@ -1,0 +1,1 @@
+query_id=AAEZbqQFAwAAABlupAXwUoV9&user=%7B%22id%22%3A6537113113%2C%22first_name%22%3A%22Qu%E1%BB%91c%20C%C6%B0%E1%BB%9Dng%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22quoccuong_0701%22%2C%22language_code%22%3A%22en%22%2C%22allows_write_to_pm%22%3Atrue%7D&auth_date=1726026552&hash=ca2cd41b57f0940f11ca712d8536dc3b9f5aad737d6404b89e1b984d82522c56
