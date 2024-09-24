@@ -5,6 +5,7 @@ const colors = require('colors');
 const readline = require('readline');
 const { DateTime } = require('luxon');
 const crypto = require('crypto');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 class FreeDogsAPIClient {
     constructor() {
@@ -23,6 +24,33 @@ class FreeDogsAPIClient {
             "Sec-Fetch-Site": "same-site",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         };
+        this.proxies = this.loadProxies();
+    }
+
+    loadProxies() {
+        const proxyFile = path.join(__dirname, 'proxy.txt');
+        return fs.readFileSync(proxyFile, 'utf8').split('\n').filter(Boolean);
+    }
+
+    getProxy(index) {
+        return this.proxies[index % this.proxies.length];
+    }
+
+    async checkProxyIP(proxy) {
+        try {
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.get('https://api.ipify.org?format=json', { 
+                httpsAgent: proxyAgent,
+                timeout: 5000
+            });
+            if (response.status === 200) {
+                return response.data.ip;
+            } else {
+                throw new Error(`Không thể kiểm tra IP của proxy. Status code: ${response.status}`);
+            }
+        } catch (error) {
+            throw new Error(`Error khi kiểm tra IP của proxy: ${error.message}`);
+        }
     }
 
     log(msg, type = 'info') {
@@ -54,11 +82,15 @@ class FreeDogsAPIClient {
         this.log('', 'info');
     }
 
-    async callAPI(initData) {
+    async callAPI(initData, proxy) {
         const url = `https://api.freedogs.bot/miniapps/api/user/telegram_auth?invitationCode=oscKOfyL&initData=${initData}`;
         
         try {
-            const response = await axios.post(url, {}, { headers: this.headers });
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.post(url, {}, { 
+                headers: this.headers,
+                httpsAgent: proxyAgent
+            });
             if (response.status === 200 && response.data.code === 0) {
                 return { success: true, data: response.data.data };
             } else {
@@ -95,12 +127,16 @@ class FreeDogsAPIClient {
         }
     }
 
-    async getGameInfo(token) {
+    async getGameInfo(token, proxy) {
         const url = "https://api.freedogs.bot/miniapps/api/user_game_level/GetGameInfo?";
         const headers = { ...this.headers, "Authorization": `Bearer ${token}` };
 
         try {
-            const response = await axios.get(url, { headers });
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.get(url, { 
+                headers,
+                httpsAgent: proxyAgent
+            });
             if (response.status === 200 && response.data.code === 0) {
                 const data = response.data.data;
                 this.log(`Số dư hiện tại: ${data.currentAmount}`, 'custom');
@@ -119,7 +155,7 @@ class FreeDogsAPIClient {
         return crypto.createHash('md5').update(input).digest('hex');
     }
 
-    async collectCoin(token, gameInfo) {
+    async collectCoin(token, gameInfo, proxy) {
         const url = "https://api.freedogs.bot/miniapps/api/user_game/collectCoin";
         const headers = { ...this.headers, "Authorization": `Bearer ${token}` };
 
@@ -134,7 +170,11 @@ class FreeDogsAPIClient {
         });
 
         try {
-            const response = await axios.post(url, params, { headers });
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.post(url, params, { 
+                headers,
+                httpsAgent: proxyAgent
+            });
             if (response.status === 200 && response.data.code === 0) {
                 this.log(`Đã thu thập thành công ${collectAmount} coin`, 'success');
                 return { success: true, data: response.data.data };
@@ -146,13 +186,16 @@ class FreeDogsAPIClient {
         }
     }
 
-    
-    async getTaskList(token) {
+    async getTaskList(token, proxy) {
         const url = "https://api.freedogs.bot/miniapps/api/task/lists?";
         const headers = { ...this.headers, "Authorization": `Bearer ${token}` };
 
         try {
-            const response = await axios.get(url, { headers });
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.get(url, { 
+                headers,
+                httpsAgent: proxyAgent
+            });
             if (response.status === 200 && response.data.code === 0) {
                 const tasks = response.data.data.lists.filter(task => task.isFinish === 0);
                 return { success: true, data: tasks };
@@ -164,12 +207,16 @@ class FreeDogsAPIClient {
         }
     }
 
-    async completeTask(token, taskId) {
+    async completeTask(token, taskId, proxy) {
         const url = `https://api.freedogs.bot/miniapps/api/task/finish_task?id=${taskId}`;
         const headers = { ...this.headers, "Authorization": `Bearer ${token}` };
 
         try {
-            const response = await axios.post(url, {}, { headers });
+            const proxyAgent = new HttpsProxyAgent(proxy);
+            const response = await axios.post(url, {}, { 
+                headers,
+                httpsAgent: proxyAgent
+            });
             if (response.status === 200 && response.data.code === 0) {
                 return { success: true };
             } else {
@@ -180,12 +227,12 @@ class FreeDogsAPIClient {
         }
     }
 
-    async processTasks(token, userId) {
-        const taskListResult = await this.getTaskList(token);
+    async processTasks(token, userId, proxy) {
+        const taskListResult = await this.getTaskList(token, proxy);
         if (taskListResult.success) {
             for (const task of taskListResult.data) {
                 this.log(`Đang thực hiện nhiệm vụ: ${task.name}`, 'info');
-                const completeResult = await this.completeTask(token, task.id);
+                const completeResult = await this.completeTask(token, task.id, proxy);
                 if (completeResult.success) {
                     this.log(`${`Làm nhiệm vụ`.white} ${task.name.yellow} thành công | Phần thưởng : ${task.rewardParty.toString().green}`);
                 } else {
@@ -213,20 +260,30 @@ class FreeDogsAPIClient {
             .filter(Boolean);
         while (true) {
             for (let i = 0; i < data.length; i++) {
-                const initData = data[i];
+                const rawInitData = data[i];
+                const initData = rawInitData.replace(/&/g, '%26').replace(/=/g, '%3D');
                 const userDataStr = decodeURIComponent(initData.split('user%3D')[1].split('%26')[0]);
                 const userData = JSON.parse(decodeURIComponent(userDataStr));
                 const userId = userData.id;
                 const firstName = userData.first_name;
+                const proxy = this.getProxy(i);
 
-                console.log(`========== Tài khoản ${i + 1} | ${firstName.green} ==========`);
+                let proxyIP = "Unknown";
+                try {
+                    proxyIP = await this.checkProxyIP(proxy);
+                } catch (error) {
+                    this.log(`Không thể kiểm tra IP của proxy: ${error.message}`, 'error');
+                    continue;
+                }
+
+                console.log(`========== Tài khoản ${i + 1} | ${firstName.green} | ip: ${proxyIP} ==========`);
 
                 let token = tokens[userId];
                 let needNewToken = !token || this.isExpired(token);
 
                 if (needNewToken) {
                     this.log(`Cần lấy token mới cho tài khoản ${userId}...`, 'info');
-                    const apiResult = await this.callAPI(initData);
+                    const apiResult = await this.callAPI(initData, proxy);
                     
                     if (apiResult.success) {
                         this.log(`Lấy token thành công cho tài khoản ${userId}`, 'success');
@@ -240,23 +297,23 @@ class FreeDogsAPIClient {
                     }
                 }
 
-                const gameInfoResult = await this.getGameInfo(token);
+                const gameInfoResult = await this.getGameInfo(token, proxy);
                 if (gameInfoResult.success) {
                     
                     if (gameInfoResult.data.coinPoolLeft > 0) {
-                        await this.collectCoin(token, gameInfoResult.data);
+                        await this.collectCoin(token, gameInfoResult.data, proxy);
                     } else {
                         this.log(`Không có coin để thu thập cho tài khoản ${userId}`, 'warning');
                     }
 
-                    await this.processTasks(token, userId);
+                    await this.processTasks(token, userId, proxy);
                 } else {
                     this.log(`Không thể lấy thông tin game cho tài khoản ${userId}: ${gameInfoResult.error}`, 'error');
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
-        await this.countdown(120);
+            await this.countdown(120);
         }
     }
 }

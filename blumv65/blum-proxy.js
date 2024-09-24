@@ -16,6 +16,7 @@ class GameBot {
     this.userInfo = null;
     this.currentGameId = null;
     this.firstAccountEndTime = null;
+    this.taskKeywords = null;
     this.userAgents = [
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15',
@@ -245,7 +246,7 @@ class GameBot {
   async getTasks() {
     try {
       await this.randomDelay();
-      const response = await this.makeRequest('get', 'https://game-domain.blum.codes/api/v1/tasks', null, true);
+      const response = await this.makeRequest('get', 'https://earn-domain.blum.codes/api/v1/tasks', null, true);
       return response;
     } catch (error) {
       await this.log(`Không thể lấy danh sách nhiệm vụ: ${error.message}`, 'error');
@@ -256,7 +257,7 @@ class GameBot {
   async startTask(taskId) {
     try {
       await this.randomDelay();
-      const response = await this.makeRequest('post', `https://game-domain.blum.codes/api/v1/tasks/${taskId}/start`, {}, true);
+      const response = await this.makeRequest('post', `https://earn-domain.blum.codes/api/v1/tasks/${taskId}/start`, {}, true);
       return response;
     } catch (error) {
       return null;
@@ -266,13 +267,42 @@ class GameBot {
   async claimTask(taskId) {
     try {
       await this.randomDelay();
-      const response = await this.makeRequest('post', `https://game-domain.blum.codes/api/v1/tasks/${taskId}/claim`, {}, true);
+      const response = await this.makeRequest('post', `https://earn-domain.blum.codes/api/v1/tasks/${taskId}/claim`, {}, true);
       return response;
     } catch (error) {
       return null;
     }
   }
 
+  async getTaskKeywords() {
+    try {
+      const response = await axios.get('https://raw.githubusercontent.com/dancayairdrop/blum/main/nv.json');
+      const data = response.data;
+  
+      if (data && data.tasks && Array.isArray(data.tasks)) {
+        this.taskKeywords = data.tasks.reduce((acc, item) => {
+          if (item.id && item.keyword) {
+            acc[item.id] = item.keyword;
+          }
+          return acc;
+        }, {});
+      }
+    } catch (error) {
+      this.taskKeywords = {};
+    }
+  }
+
+  async validateTask(taskId, keyword) {
+    try {
+      const payload = { keyword: keyword };
+      await this.randomDelay();
+      const response = await this.makeRequest('post', `https://earn-domain.blum.codes/api/v1/tasks/${taskId}/validate`, { payload }, true);
+      return response;
+    } catch (error) {
+      return null;
+    }
+  }
+  
   async joinTribe(tribeId) {
     const url = `https:///tribe-domain.blum.codes/api/v1/tribe/${tribeId}/join`;
     try {
@@ -292,161 +322,243 @@ class GameBot {
   }
 
   async runAccount() {
-    await this.checkProxyIP();
-    
-    let remainingFarmingTime = null;
-  
-    const token = await this.getNewToken();
-    if (!token) {
-      await this.log('Không thể lấy token, bỏ qua tài khoản này', 'error');
-      return Duration.fromMillis(0);
-    }
-  
-    const userInfo = await this.getUserInfo();
-    if (userInfo === null) {
-      await this.log('Không thể lấy thông tin người dùng, bỏ qua tài khoản này', 'error');
-      return Duration.fromMillis(0);
-    }
-  
-    await this.log(`Bắt đầu xử lý tài khoản ${userInfo.username}`, 'info');
-    
-    const balanceInfo = await this.getBalance();
-    if (balanceInfo) {
-      await this.log(`Số dư: ${balanceInfo.availableBalance} | Game : ${balanceInfo.playPasses}`, 'success');
-  
-      const tribeId = 'b372af40-6e97-4782-b70d-4fc7ea435022';
-      await this.joinTribe(tribeId);
+    try {
+      await this.checkProxyIP();
       
-      if (!balanceInfo.farming) {
-        const farmingResult = await this.startFarming();
-        if (farmingResult) {
-          await this.log('Đã bắt đầu farming thành công!', 'success');
-          remainingFarmingTime = Duration.fromObject({ hours: 8 });
-        }
-      } else {
-        const endTime = DateTime.fromMillis(balanceInfo.farming.endTime);
-        const formattedEndTime = endTime.setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm:ss');
-        const currentTime = DateTime.now();
-        if (currentTime > endTime) {
-          const claimBalanceResult = await this.claimBalance();
-          if (claimBalanceResult) {
-            await this.log('Claim farm thành công!', 'success');
-          }
-  
+      let remainingFarmingTime = null;
+    
+      const token = await this.getNewToken();
+      if (!token) {
+        await this.log('Không thể lấy token, bỏ qua tài khoản này', 'error');
+        return Duration.fromMillis(0);
+      }
+    
+      const userInfo = await this.getUserInfo();
+      if (userInfo === null) {
+        await this.log('Không thể lấy thông tin người dùng, bỏ qua tài khoản này', 'error');
+        return Duration.fromMillis(0);
+      }
+    
+      await this.log(`Bắt đầu xử lý tài khoản ${userInfo.username}`, 'info');
+      
+      const balanceInfo = await this.getBalance();
+      if (balanceInfo) {
+        await this.log(`Số dư: ${balanceInfo.availableBalance} | Game : ${balanceInfo.playPasses}`, 'success');
+    
+        const tribeId = 'b372af40-6e97-4782-b70d-4fc7ea435022';
+        await this.joinTribe(tribeId);
+        
+        if (!balanceInfo.farming) {
           const farmingResult = await this.startFarming();
           if (farmingResult) {
             await this.log('Đã bắt đầu farming thành công!', 'success');
             remainingFarmingTime = Duration.fromObject({ hours: 8 });
           }
         } else {
-          remainingFarmingTime = endTime.diff(currentTime);
-          const timeLeft = remainingFarmingTime.toFormat('hh:mm:ss');
-          await this.log(`Thời gian còn lại để farming: ${timeLeft}`, 'info');
-        }
-      }
-    } else {
-      await this.log('Không thể lấy thông tin số dư', 'error');
-    }
-    const taskListResponse = await this.getTasks();
-    if (taskListResponse && Array.isArray(taskListResponse) && taskListResponse.length > 0) {
-      let allTasks = taskListResponse.flatMap(section => section.tasks || []);
-      
-      const excludedTaskIds = [
-        "5daf7250-76cc-4851-ac44-4c7fdcfe5994",
-        "3b0ae076-9a85-4090-af55-d9f6c9463b2b",
-        "89710917-9352-450d-b96e-356403fc16e0",
-        "220ee7b1-cca4-4af8-838a-2001cb42b813",
-        "c4e04f2e-bbf5-4e31-917b-8bfa7c4aa3aa",
-        "f382ec3f-089d-46de-b921-b92adfd3327a",
-        "d3716390-ce5b-4c26-b82e-e45ea7eba258",
-        "5ecf9c15-d477-420b-badf-058537489524",
-        "d057e7b7-69d3-4c15-bef3-b300f9fb7e31",
-        "a4ba4078-e9e2-4d16-a834-02efe22992e2"
-      ];
-      
-      allTasks = allTasks.filter(task => !excludedTaskIds.includes(task.id));
-      
-      const notStartedTasks = allTasks.filter(task => task.status === "NOT_STARTED");
-      for (const task of notStartedTasks) {
-        const startResult = await this.startTask(task.id);
-        if (startResult) {
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          
-          const claimResult = await this.claimTask(task.id);
-          if (claimResult && claimResult.status === "FINISHED") {
-            await this.log(`Làm nhiệm vụ ${task.title}... trạng thái: thành công!`, 'success');
+          const endTime = DateTime.fromMillis(balanceInfo.farming.endTime);
+          const formattedEndTime = endTime.setZone('Asia/Ho_Chi_Minh').toFormat('dd/MM/yyyy HH:mm:ss');
+          const currentTime = DateTime.now();
+          if (currentTime > endTime) {
+            const claimBalanceResult = await this.claimBalance();
+            if (claimBalanceResult) {
+              await this.log('Claim farm thành công!', 'success');
+            }
+    
+            const farmingResult = await this.startFarming();
+            if (farmingResult) {
+              await this.log('Đã bắt đầu farming thành công!', 'success');
+              remainingFarmingTime = Duration.fromObject({ hours: 8 });
+            }
           } else {
-            await this.log(`Không thể nhận phần thưởng cho nhiệm vụ: ${task.title}`, 'error');
+            remainingFarmingTime = endTime.diff(currentTime);
+            const timeLeft = remainingFarmingTime.toFormat('hh:mm:ss');
+            await this.log(`Thời gian còn lại để farming: ${timeLeft}`, 'info');
           }
-        } else {
-          await this.log(`Không thể bắt đầu nhiệm vụ: ${task.title}`, 'error');
         }
+      } else {
+        await this.log('Không thể lấy thông tin số dư', 'error');
       }
-    } else {
-      await this.log('Không thể lấy danh sách nhiệm vụ hoặc danh sách nhiệm vụ trống', 'error');
-    }
-  
-    const dailyRewardResult = await this.checkDailyReward();
-    if (dailyRewardResult) {
-      await this.log('Đã nhận phần thưởng hàng ngày!', 'success');
-    }
-  
-    const friendBalanceInfo = await this.checkBalanceFriend();
-    if (friendBalanceInfo) {
-      if (friendBalanceInfo.amountForClaim > 0) {
-        await this.log(`Số dư bạn bè: ${friendBalanceInfo.amountForClaim}`, 'info');
-        const claimFriendBalanceResult = await this.claimBalanceFriend();
-        if (claimFriendBalanceResult) {
-          await this.log('Đã nhận số dư bạn bè thành công!', 'success');
+      await this.getTaskKeywords();
+      const dataTasks = await this.getTasks();
+      if (Array.isArray(dataTasks) && dataTasks.length > 0) {
+        let allTasks = [];
+        const processTask = (task) => {
+          allTasks.push(task);
+          if (task.subTasks && Array.isArray(task.subTasks)) {
+            task.subTasks.forEach(processTask);
+          }
+        };
+
+        for (const section of dataTasks) {
+          if (section.tasks && Array.isArray(section.tasks)) {
+            section.tasks.forEach(processTask);
+          }
+          if (section.subSections && Array.isArray(section.subSections)) {
+            for (const subSection of section.subSections) {
+              if (subSection.tasks && Array.isArray(subSection.tasks)) {
+                subSection.tasks.forEach(processTask);
+              }
+            }
+          }
         }
-      }
-    } else {
-      await this.log('Không thể kiểm tra số dư bạn bè!', 'error');
-    }
-    
-    if (balanceInfo && balanceInfo.playPasses > 0) {
-      for (let j = 0; j < balanceInfo.playPasses; j++) {
-        let playAttempts = 0;
-        const maxAttempts = 10;
-    
-        while (playAttempts < maxAttempts) {
-          try {
-            const playResult = await this.playGame();
-            if (playResult) {
-              await this.log(`Bắt đầu chơi game lần thứ ${j + 1}...`, 'success');
-              await new Promise(resolve => setTimeout(resolve, 30000));
-              const randomNumber = Math.floor(Math.random() * (200 - 150 + 1)) + 150;
-              const claimGameResult = await this.claimGame(randomNumber);
-              if (claimGameResult) {
-                await this.log(`Đã nhận phần thưởng game lần thứ ${j + 1} thành công với ${randomNumber} điểm!`, 'success');
+
+        const skipTasks = [
+          "5daf7250-76cc-4851-ac44-4c7fdcfe5994",
+          "3b0ae076-9a85-4090-af55-d9f6c9463b2b",
+          "89710917-9352-450d-b96e-356403fc16e0",
+          "220ee7b1-cca4-4af8-838a-2001cb42b813",
+          "c4e04f2e-bbf5-4e31-917b-8bfa7c4aa3aa",
+          "f382ec3f-089d-46de-b921-b92adfd3327a",
+          "d3716390-ce5b-4c26-b82e-e45ea7eba258",
+          "5ecf9c15-d477-420b-badf-058537489524",
+          "d057e7b7-69d3-4c15-bef3-b300f9fb7e31",
+          "a4ba4078-e9e2-4d16-a834-02efe22992e2",
+          "39391eb2-f031-4954-bd8a-e7aecbb1f192",
+          "d7accab9-f987-44fc-a70b-e414004e8314"
+        ];
+
+        const taskFilter = allTasks.filter(
+          (task) =>
+            !skipTasks.includes(task.id) &&
+            task.status !== "FINISHED" &&
+            !task.isHidden
+        );
+
+        for (const task of taskFilter) {
+          switch (task.status) {
+            case "READY_FOR_CLAIM":
+              const claimResult = await this.claimTask(task.id);
+              if (claimResult && claimResult.status === "FINISHED") {
+                await this.log(`Đã nhận phần thưởng cho nhiệm vụ: ${task.title.yellow}`, 'success');
               }
               break;
-            }
-          } catch (error) {
-            playAttempts++;
-            await this.log(`Không thể chơi game lần thứ ${j + 1}, lần thử ${playAttempts}: ${error.message}`, 'warning');
-            if (playAttempts < maxAttempts) {
-              await this.log(`Đang thử lại...`, 'info');
-              await this.Countdown(5);
-            } else {
-              await this.log(`Đã thử ${maxAttempts} lần không thành công, bỏ qua lượt chơi này`, 'error');
+
+            case "READY_FOR_VERIFY":
+              if (task.validationType === "KEYWORD") {
+                const keyword = this.taskKeywords[task.id];
+                if (keyword) {
+                  const validateResult = await this.validateTask(task.id, keyword);
+                  if (!validateResult) {
+                    continue;
+                  }
+                } else {
+                  await this.log(`Task ${task.title} chưa có câu trả lời nên bỏ qua`, 'warning');
+                  continue;
+                }
+              }
+              
+              const claimResultAfterVerify = await this.claimTask(task.id);
+              if (claimResultAfterVerify && claimResultAfterVerify.status === "FINISHED") {
+                await this.log(`Làm nhiệm vụ ${task.title.yellow}${`... trạng thái: thành công!`.green}`, 'success');
+              }
+              break;
+
+            default:
+              const startResult = await this.startTask(task.id);
+              if (startResult) {
+                await this.log(`Đã bắt đầu nhiệm vụ: ${task.title}`, 'success');
+              } else {
+                continue;
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
+              if (task.validationType === "KEYWORD") {
+                const keyword = this.taskKeywords[task.id];
+                if (keyword) {
+                  const validateResult = await this.validateTask(task.id, keyword);
+                  if (!validateResult) {
+                    continue;
+                  }
+                } else {
+                  await this.log(`Task ${task.title} chưa có câu trả lời nên bỏ qua`, 'warning');
+                  continue;
+                }
+              }
+              
+              const claimResultDefault = await this.claimTask(task.id);
+              if (claimResultDefault && claimResultDefault.status === "FINISHED") {
+                await this.log(`Làm nhiệm vụ ${task.title.yellow}${`... trạng thái: thành công!`.green}`, 'success');
+              }
+              break;
+          }
+        }
+      } else {
+        await this.log('Không thể lấy danh sách nhiệm vụ hoặc danh sách nhiệm vụ trống', 'error');
+      }
+    
+      const dailyRewardResult = await this.checkDailyReward();
+      if (dailyRewardResult) {
+        await this.log('Đã nhận phần thưởng hàng ngày!', 'success');
+      }
+    
+      const friendBalanceInfo = await this.checkBalanceFriend();
+      if (friendBalanceInfo) {
+        if (friendBalanceInfo.amountForClaim > 0) {
+          await this.log(`Số dư bạn bè: ${friendBalanceInfo.amountForClaim}`, 'info');
+          const claimFriendBalanceResult = await this.claimBalanceFriend();
+          if (claimFriendBalanceResult) {
+            await this.log('Đã nhận số dư bạn bè thành công!', 'success');
+          }
+        }
+      } else {
+        await this.log('Không thể kiểm tra số dư bạn bè!', 'error');
+      }
+      
+      if (balanceInfo && balanceInfo.playPasses > 0) {
+        for (let j = 0; j < balanceInfo.playPasses; j++) {
+          let playAttempts = 0;
+          const maxAttempts = 10;
+      
+          while (playAttempts < maxAttempts) {
+            try {
+              const playResult = await this.playGame();
+              if (playResult) {
+                await this.log(`Bắt đầu chơi game lần thứ ${j + 1}...`, 'success');
+                await new Promise(resolve => setTimeout(resolve, 30000));
+                const randomNumber = Math.floor(Math.random() * (200 - 150 + 1)) + 150;
+                const claimGameResult = await this.claimGame(randomNumber);
+                if (claimGameResult) {
+                  await this.log(`Đã nhận phần thưởng game lần thứ ${j + 1} thành công với ${randomNumber} điểm!`, 'success');
+                }
+                break;
+              }
+            } catch (error) {
+              playAttempts++;
+              await this.log(`Không thể chơi game lần thứ ${j + 1}, lần thử ${playAttempts}: ${error.message}`, 'warning');
+              if (playAttempts < maxAttempts) {
+                await this.log(`Đang thử lại...`, 'info');
+                await this.Countdown(5);
+              } else {
+                await this.log(`Đã thử ${maxAttempts} lần không thành công, bỏ qua lượt chơi này`, 'error');
+              }
             }
           }
         }
       }
+    
+      await this.log(`Hoàn thành xử lý tài khoản ${userInfo.username}`, 'success');
+    
+      return remainingFarmingTime || Duration.fromMillis(0);
+    } catch (error) {
+      await this.log(`Lỗi không xác định khi xử lý tài khoản: ${error.message}`, 'error');
+      return Duration.fromMillis(0);
     }
-  
-    await this.log(`Hoàn thành xử lý tài khoản ${userInfo.username}`, 'success');
-  
-    return remainingFarmingTime || Duration.fromMillis(0);
   }
 }
 
 async function runWorker(workerData) {
   const { queryId, accountIndex, proxy } = workerData;
   const gameBot = new GameBot(queryId, accountIndex, proxy);
-  const remainingTime = await gameBot.runAccount();
-  parentPort.postMessage({ accountIndex, remainingTime: remainingTime.as('seconds') });
+  try {
+    const remainingTime = await Promise.race([
+      gameBot.runAccount(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10 * 60 * 1000))
+    ]);
+    parentPort.postMessage({ accountIndex, remainingTime: remainingTime.as('seconds') });
+  } catch (error) {
+    parentPort.postMessage({ accountIndex, error: error.message });
+  }
 }
 
 async function main() {
@@ -473,9 +585,10 @@ async function main() {
   while (true) {
     let currentIndex = 0;
     let minRemainingTime = Infinity;
+    const errors = [];
 
     while (currentIndex < queryIds.length) {
-      console.log(`https://t.me/dancayairdroptool Đã sợ thì đừng dùng, đã dùng thì đừng sợ!`.magenta);
+      console.log(`Đã sợ thì đừng dùng, đã dùng thì đừng sợ!`.magenta);
       const workerPromises = [];
 
       const batchSize = Math.min(maxThreads, queryIds.length - currentIndex);
@@ -489,18 +602,27 @@ async function main() {
         });
 
         workerPromises.push(
-          new Promise((resolve, reject) => {
+          new Promise((resolve) => {
             worker.on('message', (message) => {
-              const { remainingTime } = message;
-              if (remainingTime < minRemainingTime) {
-                minRemainingTime = remainingTime;
+              if (message.error) {
+                errors.push(`Tài khoản ${message.accountIndex}: ${message.error}`);
+              } else {
+                const { remainingTime } = message;
+                if (remainingTime < minRemainingTime) {
+                  minRemainingTime = remainingTime;
+                }
               }
               resolve();
             });
-            worker.on('error', reject);
+            worker.on('error', (error) => {
+              errors.push(`Lỗi worker cho tài khoản ${currentIndex}: ${error.message}`);
+              resolve();
+            });
             worker.on('exit', (code) => {
-              if (code !== 0) reject(new Error(`Luồng bị dừng: ${code}`));
-              else resolve();
+              if (code !== 0) {
+                errors.push(`Worker cho tài khoản ${currentIndex} thoát với mã: ${code}`);
+              }
+              resolve();
             });
           })
         );
@@ -510,14 +632,17 @@ async function main() {
 
       await Promise.all(workerPromises);
 
+      if (errors.length > 0) {
+        errors.length = 0;
+      }
+
       if (currentIndex < queryIds.length) {
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    const waitTimeSeconds = Math.max(minRemainingTime, 600);
     const gameBot = new GameBot(null, 0, proxies[0]);
-    await gameBot.Countdown(waitTimeSeconds);
+    await gameBot.Countdown(28900);
   }
 }
 
