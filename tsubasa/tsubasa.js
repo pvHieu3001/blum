@@ -48,13 +48,21 @@ class Tsubasa {
         const configPath = path.join(__dirname, 'config.json');
         try {
             const configData = fs.readFileSync(configPath, 'utf8');
-            return JSON.parse(configData);
+            const config = JSON.parse(configData);
+            config.enableTapUpgrades = config.enableTapUpgrades !== undefined ? config.enableTapUpgrades : true;
+            config.enableEnergyUpgrades = config.enableEnergyUpgrades !== undefined ? config.enableEnergyUpgrades : true;
+            config.maxTapUpgradeLevel = config.maxTapUpgradeLevel || 5;
+            config.maxEnergyUpgradeLevel = config.maxEnergyUpgradeLevel || 5;
+            return config;
         } catch (error) {
             console.error("Không đọc được config:", error.message);
             return {
                 enableCardUpgrades: true,
+                enableTapUpgrades: true,
+                enableEnergyUpgrades: true,
                 maxUpgradeCost: 1000000,
-                upgradeIntervalMinutes: 60
+                maxTapUpgradeLevel: 5,
+                maxEnergyUpgradeLevel: 5
             };
         }
     }
@@ -68,12 +76,12 @@ class Tsubasa {
         console.log('');
     }
 
-    async callStartAPI(initData) {
+    async callStartAPI(initData, axiosInstance) {
         const startUrl = "https://app.ton.tsubasa-rivals.com/api/start";
         const startPayload = { lang_code: "en", initData: initData };
         
         try {
-            const startResponse = await axios.post(startUrl, startPayload, { headers: this.headers });
+            const startResponse = await axiosInstance.post(startUrl, startPayload);
             if (startResponse.status === 200 && startResponse.data && startResponse.data.game_data) {
                 const { total_coins, energy, max_energy, coins_per_tap, profit_per_second } = startResponse.data.game_data.user || {};
                 const masterHash = startResponse.data.master_hash;
@@ -102,29 +110,12 @@ class Tsubasa {
         }
     }
 
-    async callTapAPI(initData, tapCount) {
-        const tapUrl = "https://app.ton.tsubasa-rivals.com/api/tap";
-        const tapPayload = { tapCount: tapCount, initData: initData };
-        
-        try {
-            const tapResponse = await axios.post(tapUrl, tapPayload, { headers: this.headers });
-            if (tapResponse.status === 200) {
-                const { total_coins, energy, max_energy, coins_per_tap, profit_per_second } = tapResponse.data.game_data.user;
-                return { total_coins, energy, max_energy, coins_per_tap, profit_per_second, success: true };
-            } else {
-                return { success: false, error: `Lỗi tap: ${tapResponse.status}` };
-            }
-        } catch (error) {
-            return { success: false, error: `Lỗi tap: ${error.message}` };
-        }
-    }
-
-    async callDailyRewardAPI(initData) {
+    async callDailyRewardAPI(initData, axiosInstance) {
         const dailyRewardUrl = "https://app.ton.tsubasa-rivals.com/api/daily_reward/claim";
         const dailyRewardPayload = { initData: initData };
         
         try {
-            const dailyRewardResponse = await axios.post(dailyRewardUrl, dailyRewardPayload, { headers: this.headers });
+            const dailyRewardResponse = await axiosInstance.post(dailyRewardUrl, dailyRewardPayload);
             if (dailyRewardResponse.status === 200) {
                 return { success: true, message: "Điểm danh hàng ngày thành công" };
             } else {
@@ -138,12 +129,12 @@ class Tsubasa {
         }
     }
 
-    async executeTask(initData, taskId) {
+    async executeTask(initData, taskId, axiosInstance) {
         const executeUrl = "https://app.ton.tsubasa-rivals.com/api/task/execute";
         const executePayload = { task_id: taskId, initData: initData };
         
         try {
-            const executeResponse = await axios.post(executeUrl, executePayload, { headers: this.headers });
+            const executeResponse = await axiosInstance.post(executeUrl, executePayload);
             return executeResponse.status === 200;
         } catch (error) {
             this.log(`Lỗi khi làm nhiệm vụ ${taskId}: ${error.message}`);
@@ -151,12 +142,12 @@ class Tsubasa {
         }
     }
 
-    async checkTaskAchievement(initData, taskId) {
+    async checkTaskAchievement(initData, taskId, axiosInstance) {
         const achievementUrl = "https://app.ton.tsubasa-rivals.com/api/task/achievement";
         const achievementPayload = { task_id: taskId, initData: initData };
         
         try {
-            const achievementResponse = await axios.post(achievementUrl, achievementPayload, { headers: this.headers });
+            const achievementResponse = await axiosInstance.post(achievementUrl, achievementPayload);
             if (achievementResponse.status === 200) {
                 if (achievementResponse.data && achievementResponse.data && achievementResponse.data.task_info) {
                     const updatedTask = achievementResponse.data.task_info.find(task => task.id === taskId);
@@ -172,13 +163,12 @@ class Tsubasa {
         }
     }
 
-
-    async getCardInfo(initData) {
+    async getCardInfo(initData, axiosInstance) {
         const startUrl = "https://app.ton.tsubasa-rivals.com/api/start";
         const startPayload = { lang_code: "en", initData: initData };
         
         try {
-            const startResponse = await axios.post(startUrl, startPayload, { headers: this.headers });
+            const startResponse = await axiosInstance.post(startUrl, startPayload);
             if (startResponse.status === 200 && startResponse.data && startResponse.data.card_info) {
                 const cardInfo = startResponse.data.card_info.flatMap(category => {
                     return category.card_list.map(card => ({
@@ -203,24 +193,31 @@ class Tsubasa {
         }
     }
 
-    async levelUpCards(initData, totalCoins) {
+    async levelUpCards(initData, totalCoins, axiosInstance) {
         if (!this.config.enableCardUpgrades) {
             console.log("Nâng cấp thẻ bị vô hiệu hóa trong config.");
             return totalCoins;
         }
-
+    
         let updatedTotalCoins = totalCoins;
         let leveledUp = false;
-
+        let cooldownCards = new Set();
+    
         do {
             leveledUp = false;
-            const cardInfo = await this.getCardInfo(initData);
+            const cardInfo = await this.getCardInfo(initData, axiosInstance);
             if (!cardInfo) {
                 console.log("Không lấy được thông tin thẻ. Hủy nâng cấp thẻ!");
                 break;
             }
-
-            for (const card of cardInfo) {
+    
+            const sortedCards = cardInfo.sort((a, b) => b.nextProfitPerHour - a.nextProfitPerHour);
+    
+            for (const card of sortedCards) {
+                if (cooldownCards.has(card.cardId)) {
+                    continue;
+                }
+    
                 if (card.unlocked && updatedTotalCoins >= card.cost && card.cost <= this.config.maxUpgradeCost) {
                     const levelUpUrl = "https://app.ton.tsubasa-rivals.com/api/card/levelup";
                     const levelUpPayload = {
@@ -228,22 +225,212 @@ class Tsubasa {
                         card_id: card.cardId,
                         initData: initData
                     };
-
+    
                     try {
-                        const levelUpResponse = await axios.post(levelUpUrl, levelUpPayload, { headers: this.headers });
+                        const levelUpResponse = await axiosInstance.post(levelUpUrl, levelUpPayload);
                         if (levelUpResponse.status === 200) {
                             updatedTotalCoins -= card.cost;
                             leveledUp = true;
                             this.log(`Nâng cấp thẻ ${card.name} (${card.cardId}) lên level ${card.level + 1}. Cost: ${card.cost}, Balance còn: ${updatedTotalCoins}`);
+                            break;
                         }
                     } catch (error) {
-                        console.log(`Lỗi nâng cấp thẻ ${card.name} (${card.cardId}): ${error.message}`);
+                        if (error.response && error.response.status === 400 && error.response.data && error.response.data.message === 'Wait for cooldown') {
+                            this.log(`Chưa đến thời gian nâng cấp tiếp theo cho thẻ ${card.name} (${card.cardId})`, 'warning');
+                            cooldownCards.add(card.cardId);
+                        } else {
+                            console.log(error);
+                            this.log(`Lỗi nâng cấp thẻ ${card.name} (${card.cardId}): ${error.message}`, 'error');
+                        }
                     }
                 }
             }
         } while (leveledUp);
-
+    
         return updatedTotalCoins;
+    }
+
+    async callTapAPI(initData, tapCount, axiosInstance) {
+        const tapUrl = "https://app.ton.tsubasa-rivals.com/api/tap";
+        const tapPayload = { tapCount: tapCount, initData: initData };
+        
+        try {
+            const tapResponse = await axiosInstance.post(tapUrl, tapPayload);
+            if (tapResponse.status === 200) {
+                const { total_coins, energy, max_energy, coins_per_tap, profit_per_second, energy_level, tap_level } = tapResponse.data.game_data.user;
+                return { total_coins, energy, max_energy, coins_per_tap, profit_per_second, energy_level, tap_level, success: true };
+            } else {
+                return { success: false, error: `Lỗi tap: ${tapResponse.status}` };
+            }
+        } catch (error) {
+            return { success: false, error: `Lỗi tap: ${error.message}` };
+        }
+    }
+
+    async callEnergyRecoveryAPI(initData, axiosInstance) {
+        const recoveryUrl = "https://app.ton.tsubasa-rivals.com/api/energy/recovery";
+        const recoveryPayload = { initData: initData };
+        
+        try {
+            const recoveryResponse = await axiosInstance.post(recoveryUrl, recoveryPayload);
+            if (recoveryResponse.status === 200) {
+                const { energy, max_energy } = recoveryResponse.data.game_data.user;
+                return { energy, max_energy, success: true };
+            } else {
+                return { success: false, error: `Chưa thể hồi phục năng lượng` };
+            }
+        } catch (error) {
+            return { success: false, error: `Chưa thể hồi phục năng lượng` };
+        }
+    }
+
+    async tapAndRecover(initData, axiosInstance) {
+        let continueProcess = true;
+        let totalTaps = 0;
+
+        while (continueProcess) {
+            const startResult = await this.callStartAPI(initData, axiosInstance);
+            if (!startResult.success) {
+                this.log(startResult.error, 'error');
+                break;
+            }
+
+            let currentEnergy = startResult.energy;
+            const maxEnergy = startResult.max_energy;
+
+            while (currentEnergy > 0) {
+                const tapResult = await this.callTapAPI(initData, currentEnergy, axiosInstance);
+                if (!tapResult.success) {
+                    this.log(tapResult.error, 'error');
+                    continueProcess = false;
+                    break;
+                }
+
+                totalTaps += currentEnergy;
+                this.log(`Tap thành công | Năng lượng còn ${tapResult.energy}/${tapResult.max_energy} | Balance : ${tapResult.total_coins}`, 'success');
+                currentEnergy = 0;
+
+                const recoveryResult = await this.callEnergyRecoveryAPI(initData, axiosInstance);
+                if (!recoveryResult.success) {
+                    this.log(recoveryResult.error, 'warning');
+                    continueProcess = false;
+                    break;
+                }
+
+                if (recoveryResult.energy === maxEnergy) {
+                    currentEnergy = recoveryResult.energy;
+                    this.log(`Hồi năng lượng thành công | Năng lượng hiện tại: ${currentEnergy}/${maxEnergy}`, 'success');
+                } else {
+                    this.log(`Hồi năng lượng không đủ | Năng lượng hiện tại: ${recoveryResult.energy}/${maxEnergy}`, 'warning');
+                    continueProcess = false;
+                    break;
+                }
+            }
+        }
+
+        return totalTaps;
+    }
+
+    async callTapLevelUpAPI(initData, axiosInstance) {
+        const tapLevelUpUrl = "https://app.ton.tsubasa-rivals.com/api/tap/levelup";
+        const payload = { initData: initData };
+        
+        try {
+            const response = await axiosInstance.post(tapLevelUpUrl, payload);
+            if (response.status === 200) {
+                const { tap_level, tap_level_up_cost, coins_per_tap, total_coins } = response.data.game_data.user;
+                return { success: true, tap_level, tap_level_up_cost, coins_per_tap, total_coins };
+            } else {
+                return { success: false, error: `Lỗi nâng cấp tap: ${response.status}` };
+            }
+        } catch (error) {
+            return { success: false, error: `Lỗi nâng cấp tap: ${error.message}` };
+        }
+    }
+
+    async callEnergyLevelUpAPI(initData, axiosInstance) {
+        const energyLevelUpUrl = "https://app.ton.tsubasa-rivals.com/api/energy/levelup";
+        const payload = { initData: initData };
+        
+        try {
+            const response = await axiosInstance.post(energyLevelUpUrl, payload);
+            if (response.status === 200) {
+                const { energy_level, energy_level_up_cost, max_energy, total_coins } = response.data.game_data.user;
+                return { success: true, energy_level, energy_level_up_cost, max_energy, total_coins };
+            } else {
+                return { success: false, error: `Lỗi nâng cấp energy: ${response.status}` };
+            }
+        } catch (error) {
+            return { success: false, error: `Lỗi nâng cấp energy: ${error.message}` };
+        }
+    }
+
+    async upgradeGameStats(initData, axiosInstance) {
+        const tapResult = await this.callTapAPI(initData, 1, axiosInstance);
+        if (!tapResult.success) {
+            this.log(tapResult.error, 'error');
+            return;
+        }
+
+        const requiredProps = ['total_coins', 'energy', 'max_energy', 'coins_per_tap', 'profit_per_second', 'tap_level', 'energy_level'];
+        const missingProps = requiredProps.filter(prop => tapResult[prop] === undefined);
+        if (missingProps.length > 0) {
+            this.log(`Missing required properties: ${missingProps.join(', ')}`, 'error');
+            return;
+        }
+    
+        let { 
+            total_coins, 
+            energy,
+            max_energy,
+            coins_per_tap,
+            profit_per_second,
+            tap_level,
+            energy_level
+        } = tapResult;
+    
+        let tap_level_up_cost = this.calculateTapLevelUpCost(tap_level);
+        let energy_level_up_cost = this.calculateEnergyLevelUpCost(energy_level);
+    
+        if (this.config.enableTapUpgrades) {
+            while (tap_level < this.config.maxTapUpgradeLevel && total_coins >= tap_level_up_cost && tap_level_up_cost <= this.config.maxUpgradeCost) {
+                const tapUpgradeResult = await this.callTapLevelUpAPI(initData, axiosInstance);
+                if (tapUpgradeResult.success) {
+                    tap_level = tapUpgradeResult.tap_level;
+                    total_coins = tapUpgradeResult.total_coins;
+                    coins_per_tap = tapUpgradeResult.coins_per_tap;
+                    tap_level_up_cost = this.calculateTapLevelUpCost(tap_level);
+                    this.log(`Nâng cấp Tap thành công | Level: ${tap_level} | Cost: ${tap_level_up_cost} | Balance: ${total_coins}`, 'success');
+                } else {
+                    this.log(tapUpgradeResult.error, 'error');
+                    break;
+                }
+            }
+        }
+    
+        if (this.config.enableEnergyUpgrades) {
+            while (energy_level < this.config.maxEnergyUpgradeLevel && total_coins >= energy_level_up_cost && energy_level_up_cost <= this.config.maxUpgradeCost) {
+                const energyUpgradeResult = await this.callEnergyLevelUpAPI(initData, axiosInstance);
+                if (energyUpgradeResult.success) {
+                    energy_level = energyUpgradeResult.energy_level;
+                    total_coins = energyUpgradeResult.total_coins;
+                    max_energy = energyUpgradeResult.max_energy;
+                    energy_level_up_cost = this.calculateEnergyLevelUpCost(energy_level);
+                    this.log(`Nâng cấp Energy thành công | Level: ${energy_level} | Cost: ${energy_level_up_cost} | Balance: ${total_coins}`, 'success');
+                } else {
+                    this.log(energyUpgradeResult.error, 'error');
+                    break;
+                }
+            }
+        }
+    }
+    
+    calculateTapLevelUpCost(currentLevel) {
+        return 1000 * currentLevel;
+    }
+    
+    calculateEnergyLevelUpCost(currentLevel) {
+        return 1000 * currentLevel;
     }
 
     async main() {
@@ -253,8 +440,6 @@ class Tsubasa {
             .split('\n')
             .filter(Boolean);
 
-        let lastUpgradeTime = 0;
-
         while (true) {
             for (let i = 0; i < data.length; i++) {
                 const initData = data[i];
@@ -262,51 +447,49 @@ class Tsubasa {
                 
                 this.log(`========== Tài khoản ${i + 1} | ${firstName} ==========`, 'custom');
 
-                const startResult = await this.callStartAPI(initData);
-                if (startResult.success) {
-                    if (startResult.total_coins !== undefined) {
-                        this.log(`Balance: ${startResult.total_coins}`);
-                        this.log(`Năng lượng: ${startResult.energy}/${startResult.max_energy}`);
-                        this.log(`Coins per tap: ${startResult.coins_per_tap}`);
-                        this.log(`Lợi nhuận mỗi giây: ${startResult.profit_per_second}`);
-                    }
+                const axiosInstance = axios.create({
+                    headers: this.headers
+                });
 
-                    if (startResult.tasks && startResult.tasks.length > 0) {
-                        for (const task of startResult.tasks) {
-                            const executeResult = await this.executeTask(initData, task.id);
-                            if (executeResult) {
-                                const achievementResult = await this.checkTaskAchievement(initData, task.id);
-                                if (achievementResult.success) {
-                                    this.log(`Làm nhiệm vụ ${achievementResult.title} thành công | phần thưởng ${achievementResult.reward}`, 'success');
+                try {
+                    const startResult = await this.callStartAPI(initData, axiosInstance);
+                    if (startResult.success) {
+                        if (startResult.total_coins !== undefined) {
+                            this.log(`Balance: ${startResult.total_coins}`);
+                            this.log(`Năng lượng: ${startResult.energy}/${startResult.max_energy}`);
+                            this.log(`Coins per tap: ${startResult.coins_per_tap}`);
+                            this.log(`Lợi nhuận mỗi giây: ${startResult.profit_per_second}`);
+                        }
+
+                        await this.upgradeGameStats(initData, axiosInstance);
+
+                        if (startResult.tasks && startResult.tasks.length > 0) {
+                            for (const task of startResult.tasks) {
+                                const executeResult = await this.executeTask(initData, task.id, axiosInstance);
+                                if (executeResult) {
+                                    const achievementResult = await this.checkTaskAchievement(initData, task.id, axiosInstance);
+                                    if (achievementResult.success) {
+                                        this.log(`Làm nhiệm vụ ${achievementResult.title} thành công | phần thưởng ${achievementResult.reward}`, 'success');
+                                    }
                                 }
                             }
-                        }
-                    } else {
-                        this.log(`Không có nhiệm vụ nào khả dụng.`, 'warning');
-                    }
-
-                    if (startResult.energy !== undefined) {
-                        const tapResult = await this.callTapAPI(initData, startResult.energy);
-                        if (tapResult.success) {
-                            this.log(`Tap thành công | Năng lượng còn ${tapResult.energy}/${tapResult.max_energy} | Balance : ${tapResult.total_coins}`, 'success');
                         } else {
-                            this.log(tapResult.error, 'error');
+                            this.log(`Không có nhiệm vụ nào khả dụng.`, 'warning');
                         }
-                    }
 
-                    const dailyRewardResult = await this.callDailyRewardAPI(initData);
-                    this.log(dailyRewardResult.message, dailyRewardResult.success ? 'success' : 'warning');
+                        const totalTaps = await this.tapAndRecover(initData, axiosInstance);
+                        this.log(`Tổng số lần tap: ${totalTaps}`, 'success');
 
-                    const currentTime = Date.now();
-                    if (currentTime - lastUpgradeTime >= this.config.upgradeIntervalMinutes * 60 * 1000) {
-                        const updatedTotalCoins = await this.levelUpCards(initData, startResult.total_coins);
+                        const dailyRewardResult = await this.callDailyRewardAPI(initData, axiosInstance);
+                        this.log(dailyRewardResult.message, dailyRewardResult.success ? 'success' : 'warning');
+
+                        const updatedTotalCoins = await this.levelUpCards(initData, startResult.total_coins, axiosInstance);
                         this.log(`Đã nâng cấp hết các thẻ đủ điều kiện | Balance: ${updatedTotalCoins}`, 'success');
-                        lastUpgradeTime = currentTime;
                     } else {
-                        this.log(`Bỏ qua nâng cấp thẻ. Nâng cấp tiếp theo sau ${Math.round((this.config.upgradeIntervalMinutes * 60 * 1000 - (currentTime - lastUpgradeTime)) / 60000)} phút.`, 'info');
+                        this.log(startResult.error, 'error');
                     }
-                } else {
-                    this.log(startResult.error, 'error');
+                } catch (error) {
+                    this.log(`Lỗi xử lý tài khoản ${i + 1}: ${error.message}`, 'error');
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 1000));

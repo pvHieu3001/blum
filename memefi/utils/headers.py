@@ -1,6 +1,5 @@
 headers_set = {
     'Accept': '*/*',
-    'Accept-Encoding': 'gzip, deflate, br',
     'Accept-Language': 'vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5',
     'Content-Language': 'en-GB',
     'Content-Type': 'application/json',
