@@ -4,6 +4,7 @@ const readline = require('readline');
 const colors = require('colors');
 const { parse } = require('querystring');
 const { DateTime } = require('luxon');
+const path = require('path');
 
 class Tomarket {
     constructor() {
@@ -463,7 +464,7 @@ async startTask(taskId, initData, maxRetries = 5) {
     
     async main() {
         const args = require('yargs').argv;
-        const dataFile = args.data || 'data.txt';
+        const dataFile = args.data || path.join(__dirname, 'data.txt');
         const marinkitagawa = args.marinkitagawa || false;
         if (!marinkitagawa) {
             console.clear();

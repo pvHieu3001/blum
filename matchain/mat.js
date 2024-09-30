@@ -6,6 +6,7 @@ const fs = require("fs");
 const os = require("os");
 const colors = require("colors");
 const {DateTime} = require("luxon");
+const path = require('path');
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
@@ -489,7 +490,7 @@ class Matchain {
     while (true) {
       const list_countdown = [];
       const start = Math.floor(Date.now() / 1000);
-      const data = this.load_data(args["--data"] || "data.txt");
+      const data = this.load_data(args["--data"] || path.join(__dirname, 'data.txt'));
       for (let [no, item] of data.entries()) {
         const parser = this.dancay(item);
         const userEncoded = decodeURIComponent(parser["user"]);

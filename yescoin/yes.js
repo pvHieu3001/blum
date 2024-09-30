@@ -1,10 +1,11 @@
 const fs = require('fs');
 const axios = require('axios');
 const colors = require('colors');
+const path = require('path');
 
 class YesCoinBot {
     constructor() {
-        this.accounts = this.loadAccounts('data.txt');
+        this.accounts = this.loadAccounts(path.join(__dirname, 'data.txt'));
         this.tokens = this.loadTokens('token.json');
         this.cekTaskEnable = 'n';
         this.upgradeMultiEnable = 'n';

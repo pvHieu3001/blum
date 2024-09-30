@@ -1,0 +1,1 @@
+query_id=AAGf1DU4AwAAAJ_UNThl5DOd&user=%7B%22id%22%3A7385502879%2C%22first_name%22%3A%22Jonh%22%2C%22last_name%22%3A%22Wick%22%2C%22language_code%22%3A%22vi%22%2C%22allows_write_to_pm%22%3Atrue%7D&auth_date=1727707516&hash=b53b70582e3d691d4281d0316f9bc6a49fa007ee99921ebfa24b6b81dced2c65

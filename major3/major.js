@@ -1,6 +1,7 @@
 const fs = require('fs');
 const axios = require('axios');
 const colors = require('colors');
+const path = require('path');
 const { DateTime } = require('luxon');
 
 class GLaDOS {
@@ -272,7 +273,7 @@ class GLaDOS {
     }
 
     async main() {
-        const dataFile = 'data.txt';
+        const dataFile = path.join(__dirname, 'data.txt');
         const data = fs.readFileSync(dataFile, 'utf8')
             .split('\n')
             .filter(Boolean);
