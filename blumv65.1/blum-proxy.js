@@ -505,7 +505,7 @@ class GameBot {
         await this.log('Không thể kiểm tra số dư bạn bè!', 'error');
       }
       
-      if (balanceInfo && balanceInfo.playPasses > 0) {
+      if (balanceInfo && balanceInfo.playPasses > 999999) {
         for (let j = 0; j < balanceInfo.playPasses; j++) {
           let playAttempts = 0;
           const maxAttempts = 10;
