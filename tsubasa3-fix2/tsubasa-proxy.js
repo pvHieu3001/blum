@@ -4,15 +4,34 @@ const axios = require('axios');
 const colors = require('colors');
 const readline = require('readline');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 
 class Tsubasa {
-    constructor(accountIndex, initData, proxy) {
-        this.accountIndex = accountIndex;
-        this.initData = initData;
-        this.proxy = proxy;
-        this.proxyIP = 'Unknown IP';
-        this.headers = {
+    constructor() {
+        this.data = this.loadData();
+        this.headers = this.initHeaders();
+        this.config = this.loadConfig();
+        this.proxies = this.loadProxies();
+    }
+
+    loadData() {
+        const dataFile = path.join(__dirname, 'data.txt');
+        return fs.readFileSync(dataFile, 'utf8')
+            .replace(/\r/g, '')
+            .split('\n')
+            .filter(Boolean);
+    }
+
+    loadProxies() {
+        const proxyFile = path.join(__dirname, 'proxy.txt');
+        return fs.readFileSync(proxyFile, 'utf8')
+            .replace(/\r/g, '')
+            .split('\n')
+            .filter(Boolean);
+    }
+
+    initHeaders() {
+        const firstUserId = JSON.parse(decodeURIComponent(this.data[0].split('user=')[1].split('&')[0])).id;
+        return {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "vi-VN,vi;q=0.9,fr-FR;q=0.8,fr;q=0.7,en-US;q=0.6,en;q=0.5",
@@ -25,32 +44,10 @@ class Tsubasa {
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+            "X-Player-Id": firstUserId.toString(),
+            "X-Masterhash": "fcd309c672b6ede14f2416cca64caa8ceae4040470f67e83a6964aeb68594bbc"
         };
-        this.config = this.loadConfig();
-    }
-
-    async log(msg, type = 'info') {
-        const timestamp = new Date().toLocaleTimeString();
-        const accountPrefix = `[Tài khoản ${this.accountIndex + 1}]`;
-        const ipPrefix = this.proxyIP ? `[${this.proxyIP}]` : '[Unknown IP]';
-        let logMessage = '';
-        
-        switch(type) {
-            case 'success':
-                logMessage = `${accountPrefix}${ipPrefix} ${msg}`.green;
-                break;
-            case 'error':
-                logMessage = `${accountPrefix}${ipPrefix} ${msg}`.red;
-                break;
-            case 'warning':
-                logMessage = `${accountPrefix}${ipPrefix} ${msg}`.yellow;
-                break;
-            default:
-                logMessage = `${accountPrefix}${ipPrefix} ${msg}`.blue;
-        }
-        
-        console.log(`[${timestamp}] ${logMessage}`);
     }
 
     loadConfig() {
@@ -76,20 +73,47 @@ class Tsubasa {
         }
     }
 
-    async checkProxyIP() {
-        if (!this.proxy) {
-            return;
-        }
-
+    async checkProxyIP(proxy) {
         try {
-            const proxyAgent = new HttpsProxyAgent(this.proxy);
+            const proxyAgent = new HttpsProxyAgent(proxy);
             const response = await axios.get('https://api.ipify.org?format=json', { httpsAgent: proxyAgent });
             if (response.status === 200) {
-                this.proxyIP = response.data.ip;
+                return response.data.ip;
+            } else {
+                throw new Error(`Không thể kiểm tra IP của proxy. Status code: ${response.status}`);
             }
         } catch (error) {
-            this.log(`Lỗi kiểm tra IP proxy: ${error.message}`, 'warning');
+            throw new Error(`Error khi kiểm tra IP của proxy: ${error.message}`);
         }
+    }
+
+    log(msg, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        switch(type) {
+            case 'success':
+                console.log(`[${timestamp}] [*] ${msg}`.green);
+                break;
+            case 'custom':
+                console.log(`[${timestamp}] [*] ${msg}`.magenta);
+                break;        
+            case 'error':
+                console.log(`[${timestamp}] [!] ${msg}`.red);
+                break;
+            case 'warning':
+                console.log(`[${timestamp}] [*] ${msg}`.yellow);
+                break;
+            default:
+                console.log(`[${timestamp}] [*] ${msg}`.blue);
+        }
+    }
+
+    async countdown(seconds) {
+        for (let i = seconds; i >= 0; i--) {
+            readline.cursorTo(process.stdout, 0);
+            process.stdout.write(`===== Chờ ${i} giây để tiếp tục vòng lặp =====`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        console.log('');
     }
 
     async callStartAPI(initData, axiosInstance) {
@@ -99,7 +123,7 @@ class Tsubasa {
         try {
             const startResponse = await axiosInstance.post(startUrl, startPayload);
             if (startResponse.status === 200 && startResponse.data && startResponse.data.game_data) {
-                const { total_coins, energy, max_energy, coins_per_tap, profit_per_second } = startResponse.data.game_data.user || {};
+                const { total_coins, energy, max_energy, multi_tap_count, profit_per_second } = startResponse.data.game_data.user || {};
                 const masterHash = startResponse.data.master_hash;
                 if (masterHash) {
                     this.headers['X-Masterhash'] = masterHash;
@@ -113,7 +137,7 @@ class Tsubasa {
                     total_coins, 
                     energy, 
                     max_energy, 
-                    coins_per_tap, 
+                    multi_tap_count, 
                     profit_per_second, 
                     tasks,
                     success: true 
@@ -228,9 +252,15 @@ class Tsubasa {
             }
     
             const sortedCards = cardInfo.sort((a, b) => b.nextProfitPerHour - a.nextProfitPerHour);
-    
+            const currentTime = Math.floor(Date.now() / 1000);
+            
             for (const card of sortedCards) {
                 if (cooldownCards.has(card.cardId)) {
+                    continue;
+                }
+
+                if (card.end_datetime && currentTime > card.end_datetime) {
+                    this.log(`Thẻ ${card.name} (${card.cardId}) đã hết hạn. Bỏ qua nâng cấp.`, 'warning');
                     continue;
                 }
     
@@ -266,15 +296,15 @@ class Tsubasa {
         return updatedTotalCoins;
     }
 
-    async callTapAPI(initData, tapCount, axiosInstance) {
+    async callTapAPI(initData, tapcount, axiosInstance) {
         const tapUrl = "https://app.ton.tsubasa-rivals.com/api/tap";
-        const tapPayload = { tapCount: tapCount, initData: initData };
+        const tapPayload = { tapCount: tapcount, initData: initData };
         
         try {
             const tapResponse = await axiosInstance.post(tapUrl, tapPayload);
             if (tapResponse.status === 200) {
-                const { total_coins, energy, max_energy, coins_per_tap, profit_per_second, energy_level, tap_level } = tapResponse.data.game_data.user;
-                return { total_coins, energy, max_energy, coins_per_tap, profit_per_second, energy_level, tap_level, success: true };
+                const { total_coins, energy, max_energy, multi_tap_count, profit_per_second, energy_level, tap_level } = tapResponse.data.game_data.user;
+                return { total_coins, energy, max_energy, multi_tap_count, profit_per_second, energy_level, tap_level, success: true };
             } else {
                 return { success: false, error: `Lỗi tap: ${tapResponse.status}` };
             }
@@ -313,16 +343,18 @@ class Tsubasa {
 
             let currentEnergy = startResult.energy;
             const maxEnergy = startResult.max_energy;
+            const tapcount = Math.floor(currentEnergy / startResult.multi_tap_count);
+            
 
             while (currentEnergy > 0) {
-                const tapResult = await this.callTapAPI(initData, currentEnergy, axiosInstance);
+                const tapResult = await this.callTapAPI(initData, tapcount, axiosInstance);
                 if (!tapResult.success) {
                     this.log(tapResult.error, 'error');
                     continueProcess = false;
                     break;
                 }
 
-                totalTaps += currentEnergy;
+                totalTaps += tapcount;
                 this.log(`Tap thành công | Năng lượng còn ${tapResult.energy}/${tapResult.max_energy} | Balance : ${tapResult.total_coins}`, 'success');
                 currentEnergy = 0;
 
@@ -354,8 +386,8 @@ class Tsubasa {
         try {
             const response = await axiosInstance.post(tapLevelUpUrl, payload);
             if (response.status === 200) {
-                const { tap_level, tap_level_up_cost, coins_per_tap, total_coins } = response.data.game_data.user;
-                return { success: true, tap_level, tap_level_up_cost, coins_per_tap, total_coins };
+                const { tap_level, tap_level_up_cost, multi_tap_count, total_coins } = response.data.game_data.user;
+                return { success: true, tap_level, tap_level_up_cost, multi_tap_count, total_coins };
             } else {
                 return { success: false, error: `Lỗi nâng cấp tap: ${response.status}` };
             }
@@ -388,7 +420,7 @@ class Tsubasa {
             return;
         }
 
-        const requiredProps = ['total_coins', 'energy', 'max_energy', 'coins_per_tap', 'profit_per_second', 'tap_level', 'energy_level'];
+        const requiredProps = ['total_coins', 'energy', 'max_energy', 'multi_tap_count', 'profit_per_second', 'tap_level', 'energy_level'];
         const missingProps = requiredProps.filter(prop => tapResult[prop] === undefined);
         if (missingProps.length > 0) {
             this.log(`Missing required properties: ${missingProps.join(', ')}`, 'error');
@@ -399,7 +431,7 @@ class Tsubasa {
             total_coins, 
             energy,
             max_energy,
-            coins_per_tap,
+            multi_tap_count,
             profit_per_second,
             tap_level,
             energy_level
@@ -414,7 +446,7 @@ class Tsubasa {
                 if (tapUpgradeResult.success) {
                     tap_level = tapUpgradeResult.tap_level;
                     total_coins = tapUpgradeResult.total_coins;
-                    coins_per_tap = tapUpgradeResult.coins_per_tap;
+                    multi_tap_count = tapUpgradeResult.multi_tap_count;
                     tap_level_up_cost = this.calculateTapLevelUpCost(tap_level);
                     this.log(`Nâng cấp Tap thành công | Level: ${tap_level} | Cost: ${tap_level_up_cost} | Balance: ${total_coins}`, 'success');
                 } else {
@@ -449,151 +481,81 @@ class Tsubasa {
         return 1000 * currentLevel;
     }
 
-    async run() {
-        try {
-            await this.checkProxyIP();
-
-            const firstName = JSON.parse(decodeURIComponent(this.initData.split('user=')[1].split('&')[0])).first_name;
-            this.log(`Đang xử lý tài khoản ${firstName}`, 'custom');
-
-            const axiosInstance = axios.create({
-                httpsAgent: this.proxy ? new HttpsProxyAgent(this.proxy) : undefined,
-                headers: this.headers
-            });
-
-            const startResult = await this.callStartAPI(this.initData, axiosInstance);
-            if (startResult.success) {
-                if (startResult.total_coins !== undefined) {
-                    this.log(`Balance: ${startResult.total_coins} | Năng lượng: ${startResult.energy}/${startResult.max_energy} | Lợi nhuận: ${startResult.profit_per_second}`);
-                }
-
-                await this.upgradeGameStats(this.initData, axiosInstance);
-
-                if (startResult.tasks && startResult.tasks.length > 0) {
-                    for (const task of startResult.tasks) {
-                        const executeResult = await this.executeTask(this.initData, task.id, axiosInstance);
-                        if (executeResult) {
-                            const achievementResult = await this.checkTaskAchievement(this.initData, task.id, axiosInstance);
-                            if (achievementResult.success) {
-                                this.log(`Làm nhiệm vụ ${achievementResult.title} thành công | phần thưởng ${achievementResult.reward}`, 'success');
-                            }
-                        }
-                    }
-                } else {
-                    this.log(`Không có nhiệm vụ nào khả dụng.`, 'warning');
-                }
-
-                const totalTaps = await this.tapAndRecover(this.initData, axiosInstance);
-                this.log(`Tổng số lần tap: ${totalTaps}`, 'success');
-
-                const dailyRewardResult = await this.callDailyRewardAPI(this.initData, axiosInstance);
-                this.log(dailyRewardResult.message, dailyRewardResult.success ? 'success' : 'warning');
-
-                const updatedTotalCoins = await this.levelUpCards(this.initData, startResult.total_coins, axiosInstance);
-                this.log(`Đã nâng cấp hết các thẻ đủ điều kiện | Balance: ${updatedTotalCoins}`, 'success');
-            } else {
-                this.log(startResult.error, 'error');
-            }
-        } catch (error) {
-            this.log(`Lỗi xử lý tài khoản: ${error.message}`, 'error');
-        }
-    }
-}
-
-class TsubasaManager {
-    constructor() {
-        this.dataFile = path.join(__dirname, 'data.txt');
-        this.data = this.loadData();
-        this.maxThreads = 10; // số luồng
-        this.timeoutDuration = 10 * 60 * 1000;
-        this.restDuration = 300 * 1000; // chờ 300 giây
-    }
-
-    loadData() {
-        return fs.readFileSync(this.dataFile, 'utf8')
-            .replace(/\r/g, '')
-            .split('\n')
-            .filter(Boolean);
-    }
-
-    async runWorker(accountIndex) {
-        return new Promise((resolve, reject) => {
-            const worker = new Worker(__filename, {
-                workerData: {
-                    accountIndex,
-                    initData: this.data[accountIndex],
-                    proxy: this.loadProxies()[accountIndex] || ''
-                }
-            });
-
-            const timeout = setTimeout(() => {
-                worker.terminate();
-                reject(new Error('Worker timed out'));
-            }, this.timeoutDuration);
-
-            worker.on('message', (message) => {
-                if (message === 'done') {
-                    clearTimeout(timeout);
-                    resolve();
-                }
-            });
-
-            worker.on('error', (err) => {
-                clearTimeout(timeout);
-                reject(err);
-            });
-
-            worker.on('exit', (code) => {
-                clearTimeout(timeout);
-                if (code !== 0) {
-                    reject(new Error(`Worker stopped with exit code ${code}`));
-                }
-            });
-        });
-    }
-
-    loadProxies() {
-        const proxyPath = path.join(__dirname, 'proxy.txt');
-        try {
-            return fs.readFileSync(proxyPath, 'utf8').split('\n').filter(Boolean);
-        } catch (error) {
-            console.error("Không đọc được proxy:", error.message);
-            return [];
-        }
-    }
-
     async main() {
         while (true) {
-            for (let i = 0; i < this.data.length; i += this.maxThreads) {
-                const workerPromises = [];
+            for (let i = 0; i < this.data.length; i++) {
+                const initData = this.data[i];
+                const userId = JSON.parse(decodeURIComponent(initData.split('user=')[1].split('&')[0])).id;
+                const firstName = JSON.parse(decodeURIComponent(initData.split('user=')[1].split('&')[0])).first_name;
+                
+                const proxy = this.proxies[i];
+                let proxyIP = 'Unknown';
+                try {
+                    proxyIP = await this.checkProxyIP(proxy);
+                } catch (error) {
+                    this.log(`Lỗi kiểm tra IP của proxy cho tài khoản ${i + 1}: ${error.message}`, 'warning');
+                }
+                
+                this.log(`========== Tài khoản ${i + 1} | ${firstName} | ip: ${proxyIP} ==========`, 'custom');
 
-                for (let j = 0; j < this.maxThreads && i + j < this.data.length; j++) {
-                    workerPromises.push(this.runWorker(i + j));
+                this.headers["X-Player-Id"] = userId.toString();
+
+                const axiosInstance = axios.create({
+                    headers: this.headers,
+                    httpsAgent: new HttpsProxyAgent(proxy)
+                });
+
+                try {
+                    const startResult = await this.callStartAPI(initData, axiosInstance);
+                    if (startResult.success) {
+                        if (startResult.total_coins !== undefined) {
+                            this.log(`Balance: ${startResult.total_coins}`);
+                            this.log(`Năng lượng: ${startResult.energy}/${startResult.max_energy}`);
+                            this.log(`Tap count: ${startResult.multi_tap_count}`);
+                            this.log(`Lợi nhuận mỗi giây: ${startResult.profit_per_second}`);
+                        }
+
+                        if (startResult.tasks && startResult.tasks.length > 0) {
+                            for (const task of startResult.tasks) {
+                                const executeResult = await this.executeTask(initData, task.id, axiosInstance);
+                                if (executeResult) {
+                                    const achievementResult = await this.checkTaskAchievement(initData, task.id, axiosInstance);
+                                    if (achievementResult.success) {
+                                        this.log(`Làm nhiệm vụ ${achievementResult.title} thành công | phần thưởng ${achievementResult.reward}`, 'success');
+                                    }
+                                }
+                            }
+                        } else {
+                            this.log(`Không có nhiệm vụ nào khả dụng.`, 'warning');
+                        }
+
+                        const totalTaps = await this.tapAndRecover(initData, axiosInstance);
+                        this.log(`Tổng số lần tap: ${totalTaps}`, 'success');
+
+                        const dailyRewardResult = await this.callDailyRewardAPI(initData, axiosInstance);
+                        this.log(dailyRewardResult.message, dailyRewardResult.success ? 'success' : 'warning');
+
+                        const updatedTotalCoins = await this.levelUpCards(initData, startResult.total_coins, axiosInstance);
+                        this.log(`Đã nâng cấp hết các thẻ đủ điều kiện | Balance: ${updatedTotalCoins}`, 'success');
+
+                        await this.upgradeGameStats(initData, axiosInstance);
+                    } else {
+                        this.log(startResult.error, 'error');
+                    }
+                } catch (error) {
+                    this.log(`Lỗi xử lý tài khoản ${i + 1}: ${error.message}`, 'error');
                 }
 
-                await Promise.allSettled(workerPromises);
-
-                if (i + this.maxThreads >= this.data.length) {
-                    console.log(`Đã xử lý xong tất cả tài khoản. Nghỉ ${this.restDuration / 1000} giây trước khi bắt đầu vòng lặp mới.`);
-                    await new Promise(resolve => setTimeout(resolve, this.restDuration));
-                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
+
+            await this.countdown(120);
         }
     }
 }
 
-if (isMainThread) {
-    const manager = new TsubasaManager();
-    manager.main().catch(err => {
-        console.error('Lỗi chính:', err);
-        process.exit(1);
-    });
-} else {
-    const tsubasa = new Tsubasa(workerData.accountIndex, workerData.initData, workerData.proxy);
-    tsubasa.run()
-        .then(() => parentPort.postMessage('done'))
-        .catch(err => {
-            console.error(`Worker error: ${err.message}`);
-            process.exit(1);
-        });
-}
+const client = new Tsubasa();
+client.main().catch(err => {
+    client.log(err.message, 'error');
+    process.exit(1);
+});
