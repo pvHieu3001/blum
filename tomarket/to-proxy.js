@@ -491,7 +491,7 @@ class Tomarket {
 	
     async main() {
         const args = require('yargs').argv;
-        const dataFile = args.data || 'data.txt';
+        const dataFile = args.data || 'data-proxy.txt';
         const marinkitagawa = args.marinkitagawa || false;
         if (!marinkitagawa) {
             console.clear();
